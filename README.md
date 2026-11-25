@@ -39,6 +39,9 @@ Each run writes `out/<tag>.edm4hep.root` (npsim), `out/<tag>.edm4eic.root`
 5. θC − expected vs track pseudorapidity
 6. PID: fraction of tracks identified as π / K / p vs p
 
+Example pages (8000 events each, p 0.1-8 GeV, θ 30-150°, DIRC-only
+geometry): `macros/examples/dircgr_qa_{pi+,kaon+,proton}_p0.1-8.pdf`.
+
 `scripts/run_single_hadron.sh -h` lists all options (angles, geometry,
 threads, seed, ...). Until the DircGR files are in a released geometry,
 point to them explicitly: `-l <dir with lut_bar*.root> -c <chrcorr.root>`.
