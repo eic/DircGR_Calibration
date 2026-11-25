@@ -5,3 +5,6 @@ out/
 calibrations/
 fieldmaps/
 !macros/examples/*.pdf
+*_C.so
+*_C.d
+*_C_ACLiC_dict_rdict.pcm

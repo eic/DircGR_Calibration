@@ -16,7 +16,10 @@ Analysis code is plain C++ ROOT macros.
 | `scripts/run_single_hadron.sh` | single π / K / p: npsim → eicrecon (DircGR) → QA page |
 | `macros/dircgr_qa.C` | one-page QA of a DircGR output file (θC vs p, resolution, npe and residual vs η, PID) |
 | `macros/sprfit.C` | fits DircGR's track resolution parameters `spr`, `sigmaExt` from single-hadron samples |
-| `lut/lutmeta.C` | writes the grid (`nPixX`, `nPixY`, `nBar`, `bar`) into the LUT files |
+| `scripts/generateLutData.sh` | LUT photon-gun simulation (npsim), input of `lutgen.C` |
+| `lut/guncheck.C` | checks the LUT gun positions against the geometry (run by `generateLutData.sh`) |
+| `lut/lutgen.C` | builds `lut_bar<B>.root` (photon paths per MCP pixel) from the gun simulation |
+| `scripts/generateChrCorrData.sh` | π+ 3 GeV angle scan, npsim + eicrecon calibration dump, input of `chrcorrfit.C` |
 | `chrcorr/chrcorrfit.C` | chromatic-correction fits from the DircGR calibration dump |
 
 ## Quick check of the reconstruction: single hadrons
@@ -66,38 +69,81 @@ values; put the fitted values into DircGRConfig.
 `lut_bar{0..9}.root`, one per bar (DIRCHits cellID `bar`), tree `dircLUT`
 with one entry per optical-photon path: `ipixx`, `ipixy` (MCP pixel),
 `OPdirx/y/z` (unit direction at the photon start, in the bar), `OPtime`
-(time to the MCP, ns), plus `npath`, `ipath`, `nOP`, `OPprob`, `OPdirRMS`,
-`OPtimeRMS` (diagnostics). The grid is stored next to the tree as
-`TParameter<int>` (`nPixX` = 107, `nPixY` = 73, `nBar` = 10, `bar`); DircGR
-reads it from there and refuses inconsistent files. For files without it:
+(time to the MCP, ns), `OPprob` (fraction of the pixel's photons on this
+path), plus `npath`, `ipath`, `nOP`, `OPdirRMS`, `OPtimeRMS` (diagnostics).
+The grid is stored next to the tree as `TParameter<int>` (`nPixX` = 107,
+`nPixY` = 73, `nBar` = 10, `bar`); DircGR reads it from there and refuses
+inconsistent files. Pixels are the DIRCHits MCP cells (3.3 mm):
+`ipixx = 53 - cellY`, `ipixy = cellX + 36`.
 
-```bash
-root -l -b -q 'lut/lutmeta.C("LUT")'      # LUT/lut_bar0..9.root, 107 x 73, 10 bars
-```
+### Making the LUTs, step by step
 
-Pixels are the DIRCHits MCP cells (3.3 mm): `ipixx = 53 - cellY`,
-`ipixy = cellX + 36`.
-
-LUT production (optical-photon gun from 2 mm inside the prism-side end of
-each bar, 3.18 eV, isotropic into the prism hemisphere; path finding by
-friends-of-friends grouping): to be added (C macros).
+1. **Simulate the photon gun** (inside eic-shell, with the geometry the LUT
+   is for in `$DETECTOR_PATH`):
+   ```bash
+   scripts/generateLutData.sh -o lutsim -j 8
+   ```
+   Per bar, 10 chunks of 2M optical photons (3.18 eV) from a point on the
+   bar axis, 2 mm inside the prism-side end face (box 0), isotropic into the
+   prism hemisphere (θ 105-180°, flat in cos θ). The gun positions are
+   checked against the geometry first (`lut/guncheck.C`: inside `bar_vol`,
+   centred, 2 mm from the end face, cellID bar = file index); if the bar
+   layout changed, give the new positions with `-X -Y -W -Z`. Output
+   `lutsim/bar<B>_c<C>.edm4hep.root`, ~620 MB and ~5 min per chunk, so
+   ~60 GB and ~8 CPU-hours for all 10 bars. `-b "4 5"` makes only some bars,
+   `-h` lists all options.
+2. **Find the paths** (compiled with ACLiC, `+`):
+   ```bash
+   for b in 0 1 2 3 4 5 6 7 8 9; do
+     root -l -b -q "lut/lutgen.C+($b,\"lutsim\",\"LUT\")"
+   done
+   ```
+   Writes `LUT/lut_bar<B>.root` with the grid parameters, ~4 min and
+   ~1.1 GB per bar. For each MCP pixel, the photons that hit it are grouped
+   by friends-of-friends: two photons are linked if their start directions
+   differ by less than 2 mrad and their MCP times by less than 0.2 ns, and a
+   group is everything joined by a chain of links. From a point source the
+   start direction fixes the whole trajectory, so each group is one optical
+   path (one sequence of reflections in lens and prism). Groups with ≥ 20
+   photons become LUT paths: mean direction, mean time, OPprob = share of the
+   pixel's photons. Settings: `lutgen.C+(bar, indir, outdir, link [mrad],
+   tlink [ns], minop)`. Each run prints paths/pixel (~7), the fraction of
+   photons in paths (~97%) and the median path width (~3.3 mrad); the file
+   also has `hNpath`/`hNop` (paths and photons per pixel).
+3. **Check** the new LUT with the single-hadron QA (`run_single_hadron.sh
+   -l LUT ...`, above). Then make the chromatic correction with it (next
+   section), since that depends on the LUT.
 
 ## Chromatic correction
 
-1. pi+ 3 GeV at 15 polar angles (25-160 deg), at the bar-centre azimuth,
-   500 events each (npsim, DIRC-only geometry).
-2. eicrecon with the per-photon calibration dump and **no** chromatic
-   correction:
+`chrcorr.root`: per photon, DircGR corrects θC linearly in dt/L (arrival
+time minus expected, per mm of path), separately for photons going directly
+to the prism and via the mirror; the parameters are graphs vs track polar
+angle (set `0_0` = π+ 3 GeV). The input is a per-photon dump from DircGR
+run with no chromatic correction.
+
+### Making the chromatic correction, step by step
+
+1. **Simulate and dump** (inside eic-shell; eicrecon with the DircGR
+   `calibFile` parameter):
    ```bash
-   eicrecon -Pdd4hep:xml_files=$DETECTOR_PATH/epic_dirc_only.xml \
-     -PDIRC:DircGR:lutPath=<LUT dir> -PDIRC:DircGR:chrcorrFile= \
-     -PDIRC:DircGR:calibFile=dump/<tag>.chrcalib.root \
-     -Ppodio:output_file=/dev/null -Ppodio:output_collections=DircGRRadiatorInfo \
-     <tag>.edm4hep.root
+   scripts/generateChrCorrData.sh -l LUT -o chrsim -j 8
    ```
-3. Fit:
-   `root -l -b -q 'chrcorr/chrcorrfit.C("dump","chrcorr.root","chrcorrfit.pdf")'`
-   (a 4th argument, an older chrcorr file, adds a comparison page).
+   π+ at 3 GeV, 500 events at each of 15 polar angles (25-160°), each at the
+   azimuth of a bar centre; npsim, then eicrecon with
+   `-PDIRC:DircGR:chrcorrFile=` (off) and
+   `-PDIRC:DircGR:calibFile=chrsim/dump/S1_pi3GeV_th<θ>.chrcalib.root`.
+   `-l` is the LUT directory (default: the files that come with the
+   geometry); use the LUT just made when the geometry changed. ~4 min with
+   8 jobs.
+2. **Fit**:
+   ```bash
+   root -l -b -q 'chrcorr/chrcorrfit.C("chrsim/dump","chrcorr.root","chrcorrfit.pdf")'
+   ```
+   A 4th argument, an older chrcorr file, adds a comparison page.
+3. **Check**: rerun the single-hadron QA with `-l LUT -c chrcorr.root` on an
+   independent sample (another seed); the θC offset vs angle should be
+   within ~1 mrad.
 
 ## Updating the files in epic-data
 
