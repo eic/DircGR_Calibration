@@ -90,3 +90,5 @@ to `epic-data/dircgr/`, open a pull request there, then update the
 epic-data commit hash for `dircgr` in epic `compact/calibrations.xml`.
 
 W.J. Llope (Wayne State University)
+
+License: LGPL-3.0-or-later (see `LICENSE`), as EICrecon.

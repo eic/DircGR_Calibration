@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 W.J. Llope
+//
 // lutmeta.C: write the DircGR LUT grid parameters into lut_bar{0..nBar-1}.root
 //
 // Each file gets TParameter<int> nPixX, nPixY, nBar (the same in all files)

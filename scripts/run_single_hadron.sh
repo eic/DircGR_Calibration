@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: LGPL-3.0-or-later
+# Copyright (C) 2026 W.J. Llope
+#
 # run_single_hadron.sh: single charged hadrons through the ePIC DIRC
 # (npsim) and the EICrecon DircGR reconstruction, then the one-page QA plot
 # (macros/dircgr_qa.C).
@@ -36,7 +39,7 @@ set -euo pipefail
 species=pi+; nev=1000; pmin=0.1; pmax=8; thmin=30; thmax=150; phimin=0; phimax=360
 outdir=./out; compact=""; nthr=1; seed=1; lut=""; chr=""; skipsim=0; qa=1
 
-usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '5,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 while getopts "s:n:p:P:t:T:f:F:o:g:j:r:l:c:xqh" opt; do
   case $opt in
     s) species=$OPTARG ;; n) nev=$OPTARG ;;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 W.J. Llope
+//
 // dircgr_qa.C: one-page QA of the EICrecon DircGR reconstruction for
 // single-hadron samples (scripts/run_single_hadron.sh).
 //
