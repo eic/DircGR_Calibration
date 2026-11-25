@@ -15,6 +15,7 @@ Analysis code is plain C++ ROOT macros.
 |---|---|
 | `scripts/run_single_hadron.sh` | single π / K / p: npsim → eicrecon (DircGR) → QA page |
 | `macros/dircgr_qa.C` | one-page QA of a DircGR output file (θC vs p, resolution, npe and residual vs η, PID) |
+| `macros/sprfit.C` | fits DircGR's track resolution parameters `spr`, `sigmaExt` from single-hadron samples |
 | `lut/lutmeta.C` | writes the grid (`nPixX`, `nPixY`, `nBar`, `bar`) into the LUT files |
 | `chrcorr/chrcorrfit.C` | chromatic-correction fits from the DircGR calibration dump |
 
@@ -43,6 +44,19 @@ threads, seed, ...). Until the DircGR files are in a released geometry,
 point to them explicitly: `-l <dir with lut_bar*.root> -c <chrcorr.root>`.
 The macro also runs on its own:
 `root -l -b -q 'macros/dircgr_qa.C("out/pi+_p0.1-8_th30-150.edm4eic.root")'`.
+
+## Track-resolution parameters
+
+DircGR's hypothesis likelihood uses σ_track² = spr²/N + sigmaExt² (N =
+photons used). Fit them from single-hadron outputs (π, K, p together):
+
+```bash
+root -l -b -q 'macros/sprfit.C("out/pi+_p0.1-8_th30-150.edm4eic.root out/kaon+_p0.1-8_th30-150.edm4eic.root out/proton_p0.1-8_th30-150.edm4eic.root","sprfit.pdf")'
+```
+
+It prints the core σ per bin of N, the fit (N ≥ 25; fewer photons degrade
+much faster than 1/√N) and the pull widths with the current and fitted
+values; put the fitted values into DircGRConfig.
 
 ## LUT files
 
