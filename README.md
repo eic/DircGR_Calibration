@@ -21,11 +21,11 @@ Analysis code is plain C++ ROOT macros.
 ## Quick check of the reconstruction: single hadrons
 
 ```bash
-# 2000 pi+, p flat 1-8 GeV, theta flat 30-150 deg, DIRC-only geometry
-scripts/run_single_hadron.sh -s pi -n 2000 -p 1 -P 8 -o out
+# 2000 pi+, p flat 0.1-8 GeV, theta flat 30-150 deg, DIRC-only geometry
+scripts/run_single_hadron.sh -s pi -n 2000 -p 0.1 -P 8 -o out
 # kaons and protons
-scripts/run_single_hadron.sh -s k -n 2000 -p 1 -P 8 -o out
-scripts/run_single_hadron.sh -s p -n 2000 -p 1 -P 8 -o out
+scripts/run_single_hadron.sh -s k -n 2000 -p 0.1 -P 8 -o out
+scripts/run_single_hadron.sh -s p -n 2000 -p 0.1 -P 8 -o out
 ```
 
 Each run writes `out/<tag>.edm4hep.root` (npsim), `out/<tag>.edm4eic.root`
@@ -42,7 +42,7 @@ Each run writes `out/<tag>.edm4hep.root` (npsim), `out/<tag>.edm4eic.root`
 threads, seed, ...). Until the DircGR files are in a released geometry,
 point to them explicitly: `-l <dir with lut_bar*.root> -c <chrcorr.root>`.
 The macro also runs on its own:
-`root -l -b -q 'macros/dircgr_qa.C("out/pi+_p1-8_th30-150.edm4eic.root")'`.
+`root -l -b -q 'macros/dircgr_qa.C("out/pi+_p0.1-8_th30-150.edm4eic.root")'`.
 
 ## LUT files
 

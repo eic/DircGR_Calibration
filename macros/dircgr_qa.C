@@ -180,7 +180,7 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
     hId[k] = new TH1D(TString::Format("hId%d", k), "", npb, plo, phi);
   }
 
-  long nGen = 0, nMatched = 0, nRec = 0, nId[3] = {0, 0, 0};
+  long nGen = 0, nMatched = 0, nRec = 0, nId[3] = {0, 0, 0}, nRes = 0, nTail = 0;
   for (Long64_t i = 0; i < nent; i++) {
     t->GetEntry(i);
     const auto st = leaf(t, "MCParticles.generatorStatus");
@@ -238,6 +238,10 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
     pNpeTh->Fill(thTr, npe[best]);
     if (thE > 0) {
       hRes->Fill(thC - thE);
+      ++nRes;
+      if (std::abs(thC - thE) > 5) {
+        ++nTail;
+      }
       hResP->Fill(pbest, thC - thE);
       hResTh->Fill(thTr, thC - thE);
       if (std::abs(thC - thE) < 20) {
@@ -357,10 +361,16 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
   pNpeTh->SetLineColor(kRed + 1);
   pNpeTh->SetLineWidth(2);
   {
-    // draw only between the first and last filled bins (empty bins would drop to 0)
+    // draw only between the first and last bins with enough tracks (empty
+    // bins would drop to 0, sparse edge bins jump around)
+    double emax = 0;
+    for (int b = 1; b <= pNpeTh->GetNbinsX(); b++) {
+      emax = std::max(emax, pNpeTh->GetBinEntries(b));
+    }
+    const double emin = std::max(10., 0.02 * emax);
     int b1 = 0, b2 = 0;
     for (int b = 1; b <= pNpeTh->GetNbinsX(); b++) {
-      if (pNpeTh->GetBinEntries(b) > 0) {
+      if (pNpeTh->GetBinEntries(b) >= emin) {
         b2 = b;
         if (b1 == 0) {
           b1 = b;
@@ -408,6 +418,7 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
          nMatched, nRec);
   printf("thetaC - expected(%s): mean %.2f mrad, sigma %.2f mrad (Gaussian core)\n", kAscii[truth],
          mean, sig);
+  printf("tails: %.2f%% of %ld tracks with |thetaC - expected| > 5 mrad\n", 100. * nTail / std::max(1L, nRes), nRes);
   printf("PID: true %s; identified as pi %.1f%%, K %.1f%%, p %.1f%% of %ld matched tracks\n",
          kAscii[truth], 100. * nId[0] / std::max(1L, nMatched), 100. * nId[1] / std::max(1L, nMatched),
          100. * nId[2] / std::max(1L, nMatched), nMatched);

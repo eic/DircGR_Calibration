@@ -5,14 +5,14 @@
 #
 # Run inside eic-shell (needs npsim, eicrecon, root, $DETECTOR_PATH).
 #
-#   scripts/run_single_hadron.sh -s pi+ -n 2000 -p 1 -P 6
+#   scripts/run_single_hadron.sh -s pi+ -n 2000 -p 0.1 -P 8
 #   scripts/run_single_hadron.sh -s kaon- -n 500 -t 60 -T 90 -o out_k
 #
 # Options (defaults in brackets):
 #   -s species   pi+ pi- kaon+ kaon- proton anti_proton, or pi / k / p
 #                (= pi+ / kaon+ / proton)                       [pi+]
 #   -n events                                                   [1000]
-#   -p pmin  -P pmax       momentum, flat [GeV]                 [1, 6]
+#   -p pmin  -P pmax       momentum, flat [GeV]                 [0.1, 8]
 #   -t thmin -T thmax      polar angle, flat in theta [deg]     [30, 150]
 #   -f phimin -F phimax    azimuth [deg]                        [0, 360]
 #   -o outdir                                                   [./out]
@@ -33,7 +33,7 @@
 
 set -euo pipefail
 
-species=pi+; nev=1000; pmin=1; pmax=6; thmin=30; thmax=150; phimin=0; phimax=360
+species=pi+; nev=1000; pmin=0.1; pmax=8; thmin=30; thmax=150; phimin=0; phimax=360
 outdir=./out; compact=""; nthr=1; seed=1; lut=""; chr=""; skipsim=0; qa=1
 
 usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
