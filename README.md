@@ -14,7 +14,7 @@ Analysis code is plain C++ ROOT macros.
 | path | what |
 |---|---|
 | `scripts/run_single_hadron.sh` | single π / K / p: npsim → eicrecon (DircGR) → QA page |
-| `macros/dircgr_qa.C` | one-page QA of a DircGR output file (θC vs p, resolution, npe, PID) |
+| `macros/dircgr_qa.C` | one-page QA of a DircGR output file (θC vs p, resolution, npe and residual vs η, PID) |
 | `lut/lutmeta.C` | writes the grid (`nPixX`, `nPixY`, `nBar`, `bar`) into the LUT files |
 | `chrcorr/chrcorrfit.C` | chromatic-correction fits from the DircGR calibration dump |
 
@@ -34,8 +34,8 @@ Each run writes `out/<tag>.edm4hep.root` (npsim), `out/<tag>.edm4eic.root`
 1. reconstructed θC vs p, with the expected π / K / p curves
 2. θC − expected θC of the true species, Gaussian core (mean, σ)
 3. track θC resolution and mean offset vs p
-4. photons used vs track polar angle at the bar
-5. θC − expected vs track polar angle
+4. photons used vs track pseudorapidity at the bar
+5. θC − expected vs track pseudorapidity
 6. PID: fraction of tracks identified as π / K / p vs p
 
 `scripts/run_single_hadron.sh -h` lists all options (angles, geometry,
