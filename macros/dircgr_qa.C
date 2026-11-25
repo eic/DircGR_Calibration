@@ -10,8 +10,8 @@
 //   1. thetaC vs p, with the expected pi / K / p curves
 //   2. thetaC - expected (true species), Gaussian core fit
 //   3. track thetaC resolution and mean offset vs p
-//   4. photons used (npe) vs track polar angle at the bar
-//   5. thetaC - expected vs track polar angle
+//   4. photons used (npe) vs track pseudorapidity at the bar
+//   5. thetaC - expected vs track pseudorapidity
 //   6. PID: fraction identified as pi / K / p vs p (best hypothesis)
 //
 //   root -l -b -q 'dircgr_qa.C("out/pi+_p1-6_th30-150.edm4eic.root")'
@@ -53,6 +53,22 @@ double thetaExp(double p, double m, double n) {
   const double beta = p / std::sqrt(p * p + m * m);
   return (n * beta > 1) ? 1000. * std::acos(1. / (n * beta)) : 0.;
 }
+
+// thrown particle, ROOT text with charge
+TString thrownLabel(int pdg) {
+  switch (pdg) {
+  case 211: return "#pi^{+}";
+  case -211: return "#pi^{-}";
+  case 321: return "K^{+}";
+  case -321: return "K^{-}";
+  case 2212: return "p";
+  case -2212: return "#bar{p}";
+  default: return TString::Format("PDG %d", pdg);
+  }
+}
+
+// pseudorapidity from the polar angle [rad]
+double etaOf(double theta) { return -std::log(std::tan(0.5 * theta)); }
 
 int species(int pdg) {
   for (int k = 0; k < 3; k++) {
@@ -115,7 +131,8 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
 
   // first pass: momentum range and true species
   double pmin = 1e9, pmax = 0;
-  int truth = -1;
+  int truth    = -1;
+  int truthPdg = 0;
   const Long64_t nent = t->GetEntries();
   for (Long64_t i = 0; i < nent; i++) {
     t->GetEntry(i);
@@ -129,7 +146,8 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
         pmin           = std::min(pmin, p);
         pmax           = std::max(pmax, p);
         if (truth < 0) {
-          truth = species(static_cast<int>(pdg[k]));
+          truth    = species(static_cast<int>(pdg[k]));
+          truthPdg = static_cast<int>(pdg[k]);
         }
         break;
       }
@@ -145,17 +163,17 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
     phi += 0.5;
   }
   const double mtrue = kMass[truth];
-  const double ylo   = std::max(0., std::floor(thetaExp(plo > 0 ? plo : 0.1, mtrue, n) / 20) * 20 - 40);
+  const double ylo   = 300.;
   const double yhi   = 1000. * std::acos(1. / n) + 20;
   const int npb      = 20;
 
-  auto* hThP   = new TH2D("hThP", "#theta_{C} vs p;p [GeV];#theta_{C} [mrad]", 100, plo, phi, 200, ylo, yhi);
+  auto* hThP   = new TH2D("hThP", ";p [GeV];#theta_{C} [mrad]", 100, 0., phi, 200, ylo, yhi);
   auto* hRes   = new TH1D("hRes", TString::Format("#theta_{C} - #theta_{exp}(%s);#Delta#theta_{C} [mrad];tracks", kName[truth]), 160, -20, 20);
   auto* hResP  = new TH2D("hResP", "", npb, plo, phi, 160, -20, 20);
-  auto* hNpeTh = new TH2D("hNpeTh", "photons used vs track polar angle;#theta_{track} [deg];npe", 70, 20, 160, 80, 0, 160);
-  auto* pNpeTh = new TProfile("pNpeTh", "", 70, 20, 160);
-  auto* hResTh = new TH2D("hResTh", "#theta_{C} - #theta_{exp} vs track polar angle;#theta_{track} [deg];#Delta#theta_{C} [mrad]", 70, 20, 160, 80, -20, 20);
-  auto* pResTh = new TProfile("pResTh", "", 70, 20, 160);
+  auto* hNpeTh = new TH2D("hNpeTh", "photons used vs track pseudorapidity;#eta_{track};npe", 80, -2, 2, 100, 0, 200);
+  auto* pNpeTh = new TProfile("pNpeTh", "", 80, -2, 2);
+  auto* hResTh = new TH2D("hResTh", "#theta_{C} - #theta_{exp} vs track pseudorapidity;#eta_{track};#Delta#theta_{C} [mrad]", 80, -2, 2, 80, -20, 20);
+  auto* pResTh = new TProfile("pResTh", "", 80, -2, 2);
   TH1D* hAll   = new TH1D("hAll", "", npb, plo, phi);
   TH1D* hId[3];
   for (int k = 0; k < 3; k++) {
@@ -207,7 +225,7 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
     }
     ++nMatched;
     const auto k0     = static_cast<size_t>(pb[best]);
-    const double thTr = std::acos(sz[k0] / pbest) * 180. / M_PI;
+    const double thTr = etaOf(std::acos(sz[k0] / pbest)); // track pseudorapidity at the bar
     const double thC  = ang[best];
     const double thE  = thetaExp(pbest, mtrue, n);
     hAll->Fill(pbest);
@@ -253,30 +271,38 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
   TLatex tx;
   tx.SetNDC();
   tx.SetTextSize(0.045);
+  tx.SetTextFont(42);
 
   // 1. thetaC vs p
   c->cd(1);
   gPad->SetRightMargin(0.12);
   gPad->SetLogz();
   hThP->Draw("colz");
-  auto* leg = new TLegend(0.55, 0.15, 0.86, 0.38);
   for (int k = 0; k < 3; k++) {
     auto* fe = new TF1(TString::Format("fexp%d", k),
                        [k, n](double* x, double*) {
                          const double th = thetaExp(x[0], kMass[k], n);
                          return th > 0 ? th : -1.;
                        },
-                       plo, phi, 0);
+                       0., phi, 0);
     fe->SetNpx(400);
-    fe->SetLineColor(kColor[k]);
-    fe->SetLineWidth(2);
-    fe->SetLineStyle(k == truth ? 1 : 2);
+    fe->SetLineColor(kBlack);
+    fe->SetLineWidth(1);
+    fe->SetLineStyle(1);
     fe->Draw("same");
-    leg->AddEntry(fe, TString::Format("%s expected (n=%.4f)", kName[k], n), "l");
   }
-  leg->SetBorderSize(0);
-  leg->SetFillStyle(0);
-  leg->Draw();
+  TLatex big;
+  big.SetNDC();
+  big.SetTextFont(62);
+  big.SetTextSize(0.07);
+  big.SetTextColor(kRed + 1);
+  big.DrawLatex(0.02, 0.935, "only " + thrownLabel(truthPdg) + " thrown");
+  TLatex ttl; // pad title, right-aligned to leave room for the label
+  ttl.SetNDC();
+  ttl.SetTextFont(42);
+  ttl.SetTextSize(0.05);
+  ttl.SetTextAlign(31);
+  ttl.DrawLatex(0.86, 0.935, "#theta_{C} vs p");
 
   // 2. residual
   c->cd(2);
@@ -287,8 +313,8 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
     fr->Draw("same");
     mean = fr->GetParameter(1);
     sig  = std::abs(fr->GetParameter(2));
-    tx.DrawLatex(0.14, 0.84, TString::Format("mean %.2f mrad", mean));
-    tx.DrawLatex(0.14, 0.78, TString::Format("#sigma %.2f mrad", sig));
+    tx.DrawLatex(0.14, 0.84, TString::Format("#mu = %.2f mrad", mean));
+    tx.DrawLatex(0.14, 0.78, TString::Format("#sigma = %.2f mrad", sig));
   }
   tx.DrawLatex(0.62, 0.84, TString::Format("%ld / %ld tracks", nRec, nMatched));
 
@@ -306,9 +332,9 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
       gM->SetPointError(gM->GetN() - 1, 0, fs->GetParError(1));
     }
   }
-  auto* fr3 = gPad->DrawFrame(plo, -2, phi, 6, "track #theta_{C} resolution and offset;p [GeV];[mrad]");
+  auto* fr3 = gPad->DrawFrame(0., -2, phi, 6, "track #theta_{C} resolution and Gaussian mean;p [GeV];[mrad]");
   (void)fr3;
-  TLine l0(plo, 0, phi, 0);
+  TLine l0(0., 0, phi, 0);
   l0.SetLineStyle(3);
   l0.DrawClone();
   gS->SetMarkerStyle(20);
@@ -320,7 +346,7 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
   gM->Draw("p");
   auto* leg3 = new TLegend(0.5, 0.75, 0.88, 0.88);
   leg3->AddEntry(gS, "#sigma (Gaussian core)", "p");
-  leg3->AddEntry(gM, "mean #Delta#theta_{C}", "p");
+  leg3->AddEntry(gM, "#mu (Gaussian core)", "p");
   leg3->SetBorderSize(0);
   leg3->Draw();
 
@@ -328,10 +354,22 @@ void dircgr_qa(const char* infile, const char* pdf = "", double n = 1.4738) {
   c->cd(4);
   gPad->SetRightMargin(0.12);
   hNpeTh->Draw("colz");
-  pNpeTh->SetMarkerStyle(20);
-  pNpeTh->SetMarkerSize(0.6);
-  pNpeTh->SetMarkerColor(kRed + 1);
-  pNpeTh->Draw("same");
+  pNpeTh->SetLineColor(kRed + 1);
+  pNpeTh->SetLineWidth(2);
+  {
+    // draw only between the first and last filled bins (empty bins would drop to 0)
+    int b1 = 0, b2 = 0;
+    for (int b = 1; b <= pNpeTh->GetNbinsX(); b++) {
+      if (pNpeTh->GetBinEntries(b) > 0) {
+        b2 = b;
+        if (b1 == 0) {
+          b1 = b;
+        }
+      }
+    }
+    pNpeTh->GetXaxis()->SetRange(b1, b2);
+  }
+  pNpeTh->Draw("hist ][ same"); // ][ : no vertical lines at the ends
 
   // 5. residual vs track polar angle
   c->cd(5);
