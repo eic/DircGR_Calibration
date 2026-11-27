@@ -25,6 +25,7 @@
 #   -r seed                                                     [1]
 #   -l LUT directory (lut_bar0..9.root)  [calibrations/dircgr from the geometry]
 #   -c chromatic-correction file         [calibrations/dircgr/chrcorr.root]
+#   -e extra eicrecon output collections, comma separated (e.g. DircGRPhotonAngles)
 #   -x skip npsim if the .edm4hep.root file already exists
 #   -q no QA plot
 #
@@ -37,17 +38,17 @@
 set -euo pipefail
 
 species=pi+; nev=1000; pmin=0.1; pmax=8; thmin=30; thmax=150; phimin=0; phimax=360
-outdir=./out; compact=""; nthr=1; seed=1; lut=""; chr=""; skipsim=0; qa=1
+outdir=./out; compact=""; nthr=1; seed=1; lut=""; chr=""; extra=""; skipsim=0; qa=1
 
 usage() { sed -n '5,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
-while getopts "s:n:p:P:t:T:f:F:o:g:j:r:l:c:xqh" opt; do
+while getopts "s:n:p:P:t:T:f:F:o:g:j:r:l:c:e:xqh" opt; do
   case $opt in
     s) species=$OPTARG ;; n) nev=$OPTARG ;;
     p) pmin=$OPTARG ;; P) pmax=$OPTARG ;;
     t) thmin=$OPTARG ;; T) thmax=$OPTARG ;;
     f) phimin=$OPTARG ;; F) phimax=$OPTARG ;;
     o) outdir=$OPTARG ;; g) compact=$OPTARG ;; j) nthr=$OPTARG ;; r) seed=$OPTARG ;;
-    l) lut=$OPTARG ;; c) chr=$OPTARG ;; x) skipsim=1 ;; q) qa=0 ;;
+    l) lut=$OPTARG ;; c) chr=$OPTARG ;; e) extra=$OPTARG ;; x) skipsim=1 ;; q) qa=0 ;;
     h) usage 0 ;; *) usage 1 ;;
   esac
 done
@@ -97,7 +98,7 @@ fi
 echo "-- eicrecon -> $rec"
 opts=(-Pdd4hep:xml_files="$compact" -Pnthreads="$nthr"
       -Ppodio:output_file="$rec"
-      -Ppodio:output_collections=MCParticles,DIRCRawHits,DircTruthTrackSegments,DircGRParticleIDs,DircGRRadiatorInfo)
+      -Ppodio:output_collections=MCParticles,DIRCRawHits,DircTruthTrackSegments,DircGRParticleIDs,DircGRRadiatorInfo${extra:+,$extra})
 [ -n "$lut" ] && opts+=(-PDIRC:DircGR:lutPath="$lut")
 [ -n "$chr" ] && opts+=(-PDIRC:DircGR:chrcorrFile="$chr")
 (cd "$outdir" && eicrecon "${opts[@]}" "$sim") > "$outdir/$tag.eicrecon.log" 2>&1 \

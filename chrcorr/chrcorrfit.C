@@ -2,8 +2,15 @@
 // Copyright (C) 2026 W.J. Llope
 //
 // chrcorrfit.C -- chromatic-correction fits for DircGR (EICrecon), from the
-// per-photon calibration dumps written with -PDIRC:DircGR:calibFile=<file>
-// (and no chrcorr loaded, so thetaC is the uncorrected angle).
+// standard EICrecon (PODIO) output of runs with NO chromatic correction
+// loaded (-PDIRC:DircGR:chrcorrFile=), so thetaC is the uncorrected angle.
+// Per used photon path, DircGR writes one edm4eic::CherenkovPhotonAngle
+// (collection DircGRPhotonAngles): theta, time residual, path length, type
+// (-1 direct, +1 via the mirror), with relations to its raw hit and to the
+// CherenkovParticleID (-> TrackSegment = bar entry). The photon wavelength
+// (truth) comes from DIRCRawHitsLinks -> DIRCHits. Needed collections:
+//   DircGRPhotonAngles,DircGRParticleIDs,DircTruthTrackSegments,
+//   DIRCRawHits,DIRCRawHitsLinks,DIRCHits
 //
 // Same procedure as the standalone dircGR.cpp:
 //   "apparent" (used by DircGR): for each zdir (1 = direct to the prism,
@@ -17,7 +24,21 @@
 // Output: TGraphs vs track polar angle [deg], names <par>_Theta_0_0
 // (pi+ 3 GeV set, DircGR chrcorrSpecies=0, chrcorrMomBin=0), plus a PDF.
 //
-// usage: root -l -b -q 'chrcorrfit.C("dumpdir","chrcorr_new.root","plots.pdf","old_chrcorr.root")'
+// usage: root -l -b -q 'chrcorrfit.C("recodir","chrcorr_new.root","plots.pdf","old_chrcorr.root")'
+//   recodir holds S1_pi3GeV_th<angle>.edm4eic.root (scripts/generateChrCorrData.sh)
+
+#include <podio/Frame.h>
+#include <podio/ROOTReader.h>
+#include <edm4eic/CherenkovPhotonAngleCollection.h>
+#include <edm4eic/CherenkovParticleIDCollection.h>
+#include <edm4eic/MCRecoTrackerHitLinkCollection.h>
+#include <edm4eic/RawTrackerHitCollection.h>
+#include <edm4eic/TrackSegmentCollection.h>
+#include <edm4hep/SimTrackerHitCollection.h>
+#include <map>
+R__LOAD_LIBRARY(podioRootIO)
+R__LOAD_LIBRARY(edm4eic)
+R__LOAD_LIBRARY(edm4hep)
 
 #include "TFile.h"
 #include "TTree.h"
@@ -39,6 +60,8 @@ const double cacutu      = 900;
 const double INVVG_lower = -0.00005; // pol1 fit range in dt/L [ns/mm]
 const double INVVG_upper =  0.0001;
 const double idealSlope  = -0.064;   // [mrad/nm], fixed (as in dircGR.cpp)
+const double nQuartz     = 1.4738;   // as DircGR refractiveIndex (expected thetaC)
+const double mPion       = 0.13957039; // [GeV]
 const double minPhotons  = 1000;     // min photon paths per zdir for a fit (dircGR.cpp: 100,
                                      // too few: forward-angle zdir -1 fits with 120-220 gave NaN/garbage)
 
@@ -87,7 +110,57 @@ bool FitIdeal(TH2D* h, double expected, double& p0)
   return std::isfinite(p0);
 }
 
-void chrcorrfit(const char* dumpdir = "dump",
+// Fill the dt/L and wavelength histograms (z = 0 direct, 1 via the mirror)
+// from one EICrecon output file. Returns the number of photon paths;
+// sumTheta adds up the track polar angle [deg] per path, expected is the
+// pion thetaC [mrad] of the last track.
+long ReadPhotonAngles(const char* fn, TH2D* hdt[2], TH2D* hwl[2], double& sumTheta,
+                      double& expected)
+{
+  podio::ROOTReader reader;
+  reader.openFile(fn);
+  long n = 0;
+  const unsigned nev = reader.getEntries("events");
+  for (unsigned iev = 0; iev < nev; iev++) {
+    podio::Frame frame(reader.readNextEntry("events"));
+    auto& angles = frame.get<edm4eic::CherenkovPhotonAngleCollection>("DircGRPhotonAngles");
+    auto& links  = frame.get<edm4eic::MCRecoTrackerHitLinkCollection>("DIRCRawHitsLinks");
+    // wavelength [nm] per raw hit: of the earliest linked photon (the one
+    // that set the hit time), lambda = hc / E
+    std::map<int, double> lambda, tbest;
+    for (const auto& l : links) {
+      const auto sim = l.getTo();
+      if (!sim.isAvailable()) continue;
+      const int k = l.getFrom().getObjectID().index;
+      if (tbest.count(k) && sim.getTime() >= tbest[k]) continue;
+      tbest[k] = sim.getTime();
+      const auto m = sim.getMomentum();
+      const double E = sqrt(m.x * m.x + m.y * m.y + m.z * m.z); // [GeV]
+      lambda[k] = (E > 0) ? 1.239841984e-6 / E : 0.;
+    }
+    for (const auto& a : angles) {
+      const auto pts = a.getParticleID().getChargedParticle().getPoints();
+      if (pts.empty()) continue;
+      const auto& pos = pts[0].position;
+      const auto& mom = pts[0].momentum;
+      const double r  = sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+      const double p  = sqrt(mom.x * mom.x + mom.y * mom.y + mom.z * mom.z);
+      const double beta = p / sqrt(p * p + mPion * mPion);
+      expected = 1000. * acos(std::min(1.0, 1.0 / (nQuartz * beta)));
+      sumTheta += acos(pos.z / r) * 180. / M_PI;
+      const double L       = a.getPathLength();
+      const double dtOverL = (L > 0) ? a.getTimeResidual() / L : 0.;
+      const int k          = a.getRawHit().getObjectID().index;
+      const int z          = (a.getType() == -1) ? 0 : 1;
+      hdt[z]->Fill(dtOverL, 1000. * a.getTheta());
+      hwl[z]->Fill(lambda.count(k) ? lambda[k] : 0., 1000. * a.getTheta());
+      n++;
+    }
+  }
+  return n;
+}
+
+void chrcorrfit(const char* recodir = "chrsim",
                 const char* outname = "chrcorr.root",
                 const char* pdf     = "chrcorrfit.pdf",
                 const char* oldname = "")
@@ -116,18 +189,8 @@ void chrcorrfit(const char* dumpdir = "dump",
          "n1", "icpt1[mr]", "slope1", "n2", "icpt2[mr]", "slope2", "ideal1", "ideal2");
 
   for (int ia = 0; ia < NANG; ia++) {
-    TString fn = Form("%s/S1_pi3GeV_th%d.chrcalib.root", dumpdir, angles[ia]);
-    TFile* f = TFile::Open(fn);
-    if (!f || f->IsZombie()) { printf("%s: missing\n", fn.Data()); continue; }
-    TTree* t = (TTree*)f->Get("chrcalib");
-    float thetaDeg, dtOverL, thetaC, thetaCexp, lambda;
-    int zdir;
-    t->SetBranchAddress("thetaDeg", &thetaDeg);
-    t->SetBranchAddress("dtOverL", &dtOverL);
-    t->SetBranchAddress("thetaC", &thetaC);
-    t->SetBranchAddress("thetaCexp", &thetaCexp);
-    t->SetBranchAddress("lambda", &lambda);
-    t->SetBranchAddress("zdir", &zdir);
+    TString fn = Form("%s/S1_pi3GeV_th%d.edm4eic.root", recodir, angles[ia]);
+    if (gSystem->AccessPathName(fn)) { printf("%s: missing\n", fn.Data()); continue; }
 
     TH2D* hdt[2];
     TH2D* hwl[2];
@@ -142,15 +205,7 @@ void chrcorrfit(const char* dumpdir = "dump",
                         36, 295, 655, 100, cacutl, cacutu);
     }
     double sumTheta = 0, expected = 0;
-    long n = t->GetEntries();
-    for (long i = 0; i < n; i++) {
-      t->GetEntry(i);
-      int z = (zdir == -1) ? 0 : 1;
-      hdt[z]->Fill(dtOverL, thetaC);
-      hwl[z]->Fill(lambda, thetaC);
-      sumTheta += thetaDeg;
-      expected = thetaCexp;
-    }
+    const long n = ReadPhotonAngles(fn, hdt, hwl, sumTheta, expected);
     // graph abscissa: the nominal sample angle (= the primary's polar angle,
     // what DircGR evaluates at). The row mean is printed for information only:
     // secondary tracks pull it off (e.g. 85 deg for the 80 deg sample).
@@ -205,7 +260,6 @@ void chrcorrfit(const char* dumpdir = "dump",
       }
     }
     c->Print(pdf);
-    f->Close();
   }
 
   // summary: new vs old, apparent intercept/slope for both zdir
@@ -237,7 +291,7 @@ void chrcorrfit(const char* dumpdir = "dump",
       }
       if (z == 0 && p == 0) {
         TLegend* lg = new TLegend(0.15, 0.75, 0.5, 0.88);
-        lg->AddEntry(gn, "new LUTs (EICrecon dump)", "pl");
+        lg->AddEntry(gn, "new (EICrecon PODIO output)", "pl");
         if (go) lg->AddEntry(go, "old chrcorr.root", "pl");
         lg->Draw();
       }

@@ -19,8 +19,8 @@ Analysis code is plain C++ ROOT macros.
 | `scripts/generateLutData.sh` | LUT photon-gun simulation (npsim), input of `lutgen.C` |
 | `lut/guncheck.C` | checks the LUT gun positions against the geometry (run by `generateLutData.sh`) |
 | `lut/lutgen.C` | builds `lut_bar<B>.root` (photon paths per MCP pixel) from the gun simulation |
-| `scripts/generateChrCorrData.sh` | π+ 3 GeV angle scan, npsim + eicrecon calibration dump, input of `chrcorrfit.C` |
-| `chrcorr/chrcorrfit.C` | chromatic-correction fits from the DircGR calibration dump |
+| `scripts/generateChrCorrData.sh` | π+ 3 GeV angle scan, npsim + eicrecon (PODIO output), input of `chrcorrfit.C` |
+| `chrcorr/chrcorrfit.C` | chromatic-correction fits from the DircGR per-photon angles (`DircGRPhotonAngles`) |
 
 ## Quick check of the reconstruction: single hadrons
 
@@ -119,26 +119,30 @@ inconsistent files. Pixels are the DIRCHits MCP cells (3.3 mm):
 `chrcorr.root`: per photon, DircGR corrects θC linearly in dt/L (arrival
 time minus expected, per mm of path), separately for photons going directly
 to the prism and via the mirror; the parameters are graphs vs track polar
-angle (set `0_0` = π+ 3 GeV). The input is a per-photon dump from DircGR
-run with no chromatic correction.
+angle (set `0_0` = π+ 3 GeV). The input is the standard EICrecon output of
+DircGR run with no chromatic correction: one `edm4eic::CherenkovPhotonAngle`
+per used photon path (collection `DircGRPhotonAngles`: θC, time residual,
+path length, direct/mirror, with relations to the raw hit and the PID), and
+the truth links for the photon wavelength.
 
 ### Making the chromatic correction, step by step
 
-1. **Simulate and dump** (inside eic-shell; eicrecon with the DircGR
-   `calibFile` parameter):
+1. **Simulate and reconstruct** (inside eic-shell):
    ```bash
    scripts/generateChrCorrData.sh -l LUT -o chrsim -j 8
    ```
    π+ at 3 GeV, 500 events at each of 15 polar angles (25-160°), each at the
    azimuth of a bar centre; npsim, then eicrecon with
-   `-PDIRC:DircGR:chrcorrFile=` (off) and
-   `-PDIRC:DircGR:calibFile=chrsim/dump/S1_pi3GeV_th<θ>.chrcalib.root`.
+   `-PDIRC:DircGR:chrcorrFile=` (off), writing
+   `chrsim/S1_pi3GeV_th<θ>.edm4eic.root` with the collections
+   `DircGRPhotonAngles, DircGRParticleIDs, DircTruthTrackSegments,
+   DIRCRawHits, DIRCRawHitsLinks, DIRCHits`.
    `-l` is the LUT directory (default: the files that come with the
    geometry); use the LUT just made when the geometry changed. ~4 min with
    8 jobs.
 2. **Fit**:
    ```bash
-   root -l -b -q 'chrcorr/chrcorrfit.C("chrsim/dump","chrcorr.root","chrcorrfit.pdf")'
+   root -l -b -q 'chrcorr/chrcorrfit.C("chrsim","chrcorr.root","chrcorrfit.pdf")'
    ```
    A 4th argument, an older chrcorr file, adds a comparison page.
 3. **Check**: rerun the single-hadron QA with `-l LUT -c chrcorr.root` on an

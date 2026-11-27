@@ -5,15 +5,16 @@
 # generateChrCorrData.sh: input of chrcorr/chrcorrfit.C. pi+ at 3 GeV at 15
 # polar angles (25-160 deg), each at the azimuth of the bar centre of box 0
 # (corrected for the bending at 3 GeV), simulated with npsim, then
-# reconstructed with eicrecon (DircGR) with NO chromatic correction and the
-# per-photon calibration dump switched on (-PDIRC:DircGR:calibFile).
+# reconstructed with eicrecon (DircGR) with NO chromatic correction; the
+# per-photon angles (DircGRPhotonAngles) and what chrcorrfit.C needs with
+# them are written to the standard PODIO output.
 #
 # Run inside eic-shell (needs npsim, eicrecon, $DETECTOR_PATH). The LUTs must
 # match the geometry: make them first (generateLutData.sh + lut/lutgen.C)
 # when the geometry changed.
 #
 #   scripts/generateChrCorrData.sh -l LUT -j 8
-#   root -l -b -q 'chrcorr/chrcorrfit.C("chrsim/dump","chrcorr.root","chrcorrfit.pdf")'
+#   root -l -b -q 'chrcorr/chrcorrfit.C("chrsim","chrcorr.root","chrcorrfit.pdf")'
 #
 # Options (defaults in brackets):
 #   -n events per angle                                         [500]
@@ -27,7 +28,7 @@
 #
 # Output in outdir, TAG = S1_pi3GeV_th<angle>:
 #   TAG.edm4hep.root, TAG.npsim.log, TAG.eicrecon.log
-#   dump/TAG.chrcalib.root   (the chrcorrfit.C input)
+#   TAG.edm4eic.root   (the chrcorrfit.C input)
 
 set -euo pipefail
 
@@ -55,7 +56,7 @@ if [ -n "$lut" ]; then
     [ -f "$lut/lut_bar$b.root" ] || { echo "no $lut/lut_bar$b.root"; exit 1; }
   done
 fi
-mkdir -p "$outdir/dump"
+mkdir -p "$outdir"
 outdir=$(cd "$outdir" && pwd)
 
 # azimuth of the bar centre (box 0, bar 5 side) for a 3 GeV pi+ from the
@@ -74,7 +75,7 @@ phi_of_theta() {
 run_angle() {
   local th=$1 seed=$2
   local tag=S1_pi3GeV_th$th ph
-  local sim=$outdir/$tag.edm4hep.root dump=$outdir/dump/$tag.chrcalib.root
+  local sim=$outdir/$tag.edm4hep.root rec=$outdir/$tag.edm4eic.root
   ph=$(phi_of_theta "$th")
   if [ $skipsim = 1 ] && [ -f "$sim" ]; then
     echo "-- $tag: using existing $sim"
@@ -88,15 +89,13 @@ run_angle() {
       --gun.position "0*cm,0*cm,0*cm" --outputFile "$sim" > "$outdir/$tag.npsim.log" 2>&1 \
       || { echo "npsim failed: $outdir/$tag.npsim.log"; return 1; }
   fi
-  echo "-- $tag: eicrecon -> $dump"
-  local opts=(-Pdd4hep:xml_files="$compact" -Pnthreads=1
-              -PDIRC:DircGR:chrcorrFile= -PDIRC:DircGR:calibFile="$dump"
-              -Ppodio:output_file=/dev/null -Ppodio:output_collections=DircGRRadiatorInfo)
+  echo "-- $tag: eicrecon -> $rec"
+  local opts=(-Pdd4hep:xml_files="$compact" -Pnthreads=1 -PDIRC:DircGR:chrcorrFile=
+              -Ppodio:output_file="$rec"
+              -Ppodio:output_collections=DircGRPhotonAngles,DircGRParticleIDs,DircTruthTrackSegments,DIRCRawHits,DIRCRawHitsLinks,DIRCHits)
   [ -n "$lut" ] && opts+=(-PDIRC:DircGR:lutPath="$lut")
-  rm -f "$dump"
   (cd "$outdir" && eicrecon "${opts[@]}" "$sim") > "$outdir/$tag.eicrecon.log" 2>&1 \
     || { echo "eicrecon failed: $outdir/$tag.eicrecon.log"; return 1; }
-  [ -s "$dump" ] || { echo "no $dump: does this eicrecon have DIRC:DircGR:calibFile?"; return 1; }
 }
 
 echo "== chromatic-correction input: pi+ 3 GeV, $nev events at [$angles] deg -> $outdir"
@@ -111,4 +110,4 @@ done
 fail=0
 for p in "${pids[@]}"; do wait "$p" || fail=1; done
 [ $fail = 0 ] || { echo "== some angles FAILED"; exit 1; }
-echo "== done. Next: root -l -b -q '$(cd "$(dirname "$0")/.." && pwd)/chrcorr/chrcorrfit.C(\"$outdir/dump\",\"chrcorr.root\",\"chrcorrfit.pdf\")'"
+echo "== done. Next: root -l -b -q '$(cd "$(dirname "$0")/.." && pwd)/chrcorr/chrcorrfit.C(\"$outdir\",\"chrcorr.root\",\"chrcorrfit.pdf\")'"
