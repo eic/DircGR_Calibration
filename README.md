@@ -127,6 +127,9 @@ the truth links for the photon wavelength.
 
 ### Making the chromatic correction, step by step
 
+Requires an EICrecon with the `DircGRPhotonAngles` output
+(eic/EICrecon#3258, with the new datatype from eic/EDM4eic#189).
+
 1. **Simulate and reconstruct** (inside eic-shell):
    ```bash
    scripts/generateChrCorrData.sh -l LUT -o chrsim -j 8
